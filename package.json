@@ -1,0 +1,23 @@
+{
+  "name": "kasir",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/imam-ngh/Kasir-Mebel.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/imam-ngh/Kasir-Mebel/issues"
+  },
+  "homepage": "https://github.com/imam-ngh/Kasir-Mebel#readme",
+  "dependencies": {
+    "@vercel/postgres": "^0.10.0"
+  }
+}

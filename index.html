@@ -468,13 +468,13 @@
 
     <script>
         // Application State
-        let products = JSON.parse(localStorage.getItem('products')) || [];
-        let transactions = JSON.parse(localStorage.getItem('transactions')) || [];
+        let products = [];
+        let transactions = [];
         let cart = [];
         let currentReceipt = null;
         let currentFilter = 'all';
         let editingProductId = null;
-
+        const API_BASE_URL = ''; // Kosongkan untuk produksi di Vercel, atau isi 'http://localhost:3000' untuk dev
         // Category Icons
         const categoryIcons = {
             'Kayu': 'fa-tree',
@@ -487,20 +487,31 @@
         };
 
         // Initialize App
-        document.addEventListener('DOMContentLoaded', () => {
+        document.addEventListener('DOMContentLoaded', async () => {
+            setupEventListeners();
+            setCurrentDate();
+            await loadInitialData();
+        });
+
+        async function loadInitialData() {
+            showToast('Memuat data...', 'info');
             try {
-                initializeDefaultProducts();
+                const [productsRes, transactionsRes] = await Promise.all([
+                    fetch(`${API_BASE_URL}/api/products`),
+                    fetch(`${API_BASE_URL}/api/transactions`)
+                ]);
+                products = await productsRes.json();
+                transactions = await transactionsRes.json();
+
                 updateDashboard();
                 renderProducts();
                 renderTransactions();
-                setupEventListeners();
-                setCurrentDate();
-                generateReport(); // Initialize report
+                generateReport();
             } catch (error) {
                 console.error('Error initializing app:', error);
-                alert('Error: ' + error.message);
+                showToast('Gagal memuat data dari server.', 'error');
             }
-        });
+        }
 
         // Set Current Date
         function setCurrentDate() {
@@ -508,63 +519,6 @@
             const dateElement = document.getElementById('currentDate');
             if (dateElement) {
                 dateElement.textContent = new Date().toLocaleDateString('id-ID', options);
-            }
-        }
-
-        // Initialize Default Products
-        function initializeDefaultProducts() {
-            if (products.length === 0) {
-                products = [
-                    { id: 1, name: 'Kayu Jati', category: 'Kayu', unit: 'batang', price: 250000, stock: 50 },
-                    { id: 2, name: 'Kayu Mahoni', category: 'Kayu', unit: 'batang', price: 150000, stock: 30 },
-                    { id: 3, name: 'Bambu Ori', category: 'Bambu', unit: 'batang', price: 25000, stock: 100 },
-                    { id: 4, name: 'Triplex 9mm', category: 'Triplex', unit: 'lembar', price: 85000, stock: 25 },
-                    { id: 5, name: 'Pintu Kayu Jati', category: 'Pintu', unit: 'pcs', price: 450000, stock: 15 },
-                    { id: 6, name: 'Papan Kayu', category: 'Papan', unit: 'pcs', price: 75000, stock: 40 },
-                    { id: 7, name: 'Besi Hollow', category: 'Besi', unit: 'batang', price: 65000, stock: 20 },
-                    { id: 8, name: ' engsel', category: 'Aksesoris', unit: 'pcs', price: 8500, stock: 100 }
-                ];
-                saveProducts();
-            }
-        }
-
-        // Save Products to LocalStorage
-        function saveProducts() {
-            localStorage.setItem('products', JSON.stringify(products));
-            renderProducts();
-            updateDashboard();
-        }
-
-        // Save Transactions to LocalStorage
-        function saveTransactions() {
-            localStorage.setItem('transactions', JSON.stringify(transactions));
-            renderTransactions();
-            updateDashboard();
-        }
-
-        // Save receipt image to img folder
-        async function saveReceiptImage(transaction) {
-            const receiptElement = document.getElementById('receiptContent');
-            
-            try {
-                const canvas = await html2canvas(receiptElement, {
-                    scale: 2,
-                    backgroundColor: '#ffffff',
-                    logging: false
-                });
-
-                const imageData = canvas.toDataURL('image/png');
-                
-                // Convert base64 to blob and save
-                const link = document.createElement('a');
-                link.download = `kwitansi-${transaction.transactionNumber}.png`;
-                link.href = imageData;
-                link.click();
-                
-                return true;
-            } catch (error) {
-                console.error('Error saving image:', error);
-                return false;
             }
         }
 
@@ -913,20 +867,29 @@
             document.getElementById('deleteModal').classList.remove('active');
         }
 
-        function confirmDeleteProducts() {
+        async function confirmDeleteProducts() {
             const checkboxes = document.querySelectorAll('.delete-checkbox:checked');
             const idsToDelete = Array.from(checkboxes).map(cb => parseInt(cb.value));
             
             if (idsToDelete.length === 0) {
-                showToast('Pilih至少 satu produk untuk dihapus!', 'error');
+                showToast('Pilih setidaknya satu produk untuk dihapus!', 'error');
                 return;
             }
 
             if (confirm(`Apakah Anda yakin ingin menghapus ${idsToDelete.length} produk?`)) {
-                products = products.filter(p => !idsToDelete.includes(p.id));
-                saveProducts();
-                closeDeleteModal();
-                showToast('Produk berhasil dihapus!', 'success');
+                try {
+                    const response = await fetch(`${API_BASE_URL}/api/products`, {
+                        method: 'DELETE',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ ids: idsToDelete })
+                    });
+                    if (!response.ok) throw new Error('Gagal menghapus produk');
+                    showToast('Produk berhasil dihapus!', 'success');
+                    closeDeleteModal();
+                    await loadInitialData(); // Muat ulang data
+                } catch (error) {
+                    showToast(error.message, 'error');
+                }
             }
         }
 
@@ -936,6 +899,11 @@
             const filteredProducts = currentFilter === 'all' 
                 ? products 
                 : products.filter(p => p.category === currentFilter);
+
+            if (!grid) return;
+            if (filteredProducts.length === 0) {
+                grid.innerHTML = `<p style="text-align: center; color: var(--text-secondary);">Tidak ada produk.</p>`;
+            }
 
             grid.innerHTML = filteredProducts.map(product => `
                 <div class="product-card">
@@ -1129,7 +1097,7 @@
         }
 
         // Checkout
-        function checkout() {
+        async function checkout() {
             if (cart.length === 0) {
                 showToast('Keranjang kosong!', 'error');
                 return;
@@ -1171,22 +1139,24 @@
                 status: 'completed'
             };
 
-            // Update stock
-            cart.forEach(item => {
-                const product = products.find(p => p.id === item.productId);
-                if (product) {
-                    product.stock -= item.quantity;
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/transactions`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ transaction })
+                });
+
+                const result = await response.json();
+                if (!response.ok) {
+                    throw new Error(result.details || 'Gagal menyimpan transaksi.');
                 }
-            });
 
-            transactions.push(transaction);
-            saveTransactions();
-            saveProducts();
+            } catch (error) {
+                showToast(`Error: ${error.message}`, 'error');
+                return; // Hentikan proses jika checkout gagal
+            }
 
-            // Update store info in receipt
-            const storeName = 'Toko Mabel Mulyanto';
-            const storePhone = '082226085699';
-            const storeAddress = 'Jl. Example No. 123, Kota Anda';
+            // Lanjutkan jika checkout di backend berhasil
             currentReceipt = transaction;
             generateReceipt(transaction);
 
@@ -1207,6 +1177,7 @@
             document.getElementById('ongkirGroup').style.display = 'none';
 
             showToast('Transaksi berhasil!', 'success');
+            await loadInitialData(); // Muat ulang semua data dari server
         }
 
         // Generate Transaction Number
@@ -1448,7 +1419,7 @@
             document.getElementById('productModal').classList.remove('active');
         }
 
-        function saveProduct() {
+        async function saveProduct() {
             const name = document.getElementById('productName').value.trim();
             const category = document.getElementById('productCategory').value;
             const unit = document.getElementById('productUnit').value;
@@ -1460,19 +1431,17 @@
                 return;
             }
 
+            const productData = { name, category, unit, price, stock };
+            let method = 'POST';
+            let url = `${API_BASE_URL}/api/products`;
+
             if (editingProductId) {
-                // Update existing product
-                const product = products.find(p => p.id === editingProductId);
-                if (product) {
-                    product.name = name;
-                    product.category = category;
-                    product.unit = unit;
-                    product.price = price;
-                    product.stock = stock;
-                }
-                showToast('Produk diperbarui!', 'success');
-            } else {
-                // Add new product
+                productData.id = editingProductId;
+                method = 'PUT';
+            }
+
+            /* else {
+                // Add new product (dihapus karena sudah default POST)
                 const newProduct = {
                     id: Date.now(),
                     name: name,
@@ -1483,12 +1452,24 @@
                 };
                 products.push(newProduct);
                 showToast('Produk ditambahkan!', 'success');
-            }
+            } */
 
-            saveProducts();
-            closeProductModal();
-            document.getElementById('productForm').reset();
-            editingProductId = null;
+            try {
+                const response = await fetch(url, {
+                    method: method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(productData)
+                });
+                if (!response.ok) throw new Error('Gagal menyimpan produk');
+
+                showToast(editingProductId ? 'Produk diperbarui!' : 'Produk ditambahkan!', 'success');
+                closeProductModal();
+                document.getElementById('productForm').reset();
+                editingProductId = null;
+                await loadInitialData(); // Muat ulang data dari server
+            } catch (error) {
+                showToast(error.message, 'error');
+            }
         }
 
         function editProduct(productId) {
@@ -1505,14 +1486,6 @@
             document.getElementById('productStock').value = product.stock;
 
             openProductModal();
-        }
-
-        function deleteProduct(productId) {
-            if (confirm('Apakah Anda yakin ingin menghapus produk ini?')) {
-                products = products.filter(p => p.id !== productId);
-                saveProducts();
-                showToast('Produk dihapus!', 'success');
-            }
         }
 
         // Utility Functions
