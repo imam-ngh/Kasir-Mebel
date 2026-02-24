@@ -255,6 +255,18 @@
         </section>
     </main>
 
+    <!-- Floating Cart Popup -->
+    <div id="floatingCart" class="floating-cart" onclick="openCart()">
+        <div class="floating-cart-icon">
+            <i class="fas fa-shopping-cart"></i>
+            <span class="floating-cart-badge" id="floatingCartBadge">0</span>
+        </div>
+        <div class="floating-cart-info">
+            <span class="floating-cart-total" id="floatingCartTotal">Rp 0</span>
+            <span class="floating-cart-label">Keranjang</span>
+        </div>
+    </div>
+
     <!-- Cart Modal -->
     <div class="modal-overlay" id="cartModal">
         <div class="modal">
@@ -435,10 +447,7 @@
                 </div>
                 <div class="share-buttons">
                     <button class="share-btn whatsapp" onclick="shareWhatsApp()">
-                        <i class="fab fa-whatsapp"></i> WhatsApp
-                    </button>
-                    <button class="share-btn whatsapp" onclick="shareWhatsAppImage()">
-                        <i class="fab fa-whatsapp"></i> Kirim Gambar
+                        <i class="fab fa-whatsapp"></i> Kirim WhatsApp
                     </button>
                     <button class="share-btn email" onclick="shareEmail()">
                         <i class="fas fa-envelope"></i> Email
@@ -1008,7 +1017,21 @@
 
         function updateCartBadge() {
             const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
+            const totalPrice = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+            
             document.getElementById('cartBadge').textContent = totalItems;
+            
+            // Update floating cart
+            const floatingBadge = document.getElementById('floatingCartBadge');
+            const floatingTotal = document.getElementById('floatingCartTotal');
+            if (floatingBadge) floatingBadge.textContent = totalItems;
+            if (floatingTotal) floatingTotal.textContent = formatCurrency(totalPrice);
+            
+            // Show/hide floating cart
+            const floatingCart = document.getElementById('floatingCart');
+            if (floatingCart) {
+                floatingCart.style.display = totalItems > 0 ? 'flex' : 'none';
+            }
         }
 
         function openCart() {
@@ -1109,6 +1132,14 @@
         function checkout() {
             if (cart.length === 0) {
                 showToast('Keranjang kosong!', 'error');
+                return;
+            }
+
+            // Ask for payment confirmation
+            const isPaid = confirm('Apakah pembayaran sudah dilakukan?');
+            
+            if (!isPaid) {
+                showToast('Silakan lakukan pembayaran terlebih dahulu!', 'warning');
                 return;
             }
 
@@ -1291,30 +1322,30 @@
 
             const itemsText = currentReceipt.items.map(item => 
                 `${item.name} x${item.quantity} = ${formatCurrency(item.price * item.quantity)}`
-            ).join('%0A');
+            ).join('\n');
 
-            let message = `*KWITANSI Toko Mabel Mulyanto*%0A%0A` +
-                `No: ${currentReceipt.transactionNumber}%0A` +
-                `Tanggal: ${formatDate(currentReceipt.date)}%0A` +
-                `Pelanggan: ${currentReceipt.customerName || 'Umum'}%0A%0A` +
-                `*Item:*%0A${itemsText}%0A%0A` +
-                `Subtotal: ${formatCurrency(currentReceipt.subtotal)}%0A`;
+            let message = `*KWITANSI Toko Mabel Mulyanto*\n\n` +
+                `No: ${currentReceipt.transactionNumber}\n` +
+                `Tanggal: ${formatDate(currentReceipt.date)}\n` +
+                `Pelanggan: ${currentReceipt.customerName || 'Umum'}\n\n` +
+                `*Item:*\n${itemsText}\n\n` +
+                `Subtotal: ${formatCurrency(currentReceipt.subtotal)}\n`;
             
             if (currentReceipt.discount > 0) {
-                message += `Diskon: -${formatCurrency(currentReceipt.discount)}%0A`;
+                message += `Diskon: -${formatCurrency(currentReceipt.discount)}\n`;
             }
             if (currentReceipt.shippingCost > 0) {
-                message += `Ongkir: ${formatCurrency(currentReceipt.shippingCost)}%0A`;
+                message += `Ongkir: ${formatCurrency(currentReceipt.shippingCost)}\n`;
             }
             
-            message += `*TOTAL: ${formatCurrency(currentReceipt.total)}*%0A%0A` +
+            message += `*TOTAL: ${formatCurrency(currentReceipt.total)}*\n\n` +
                 `Terima kasih!`;
 
             const encodedMessage = encodeURIComponent(message);
             window.open(`https://wa.me/${phoneNumber}?text=${encodedMessage}`, '_blank');
         }
 
-        async function shareWhatsAppImage() {
+        async function shareWhatsAppWithImage() {
             if (!currentReceipt) return;
 
             // Get phone from the transaction
@@ -1340,12 +1371,8 @@
                     logging: false
                 });
 
-                // Get base64 image
+                // Download image
                 const imageData = canvas.toDataURL('image/png');
-                
-                // Open WhatsApp with the image as document
-                // Unfortunately WhatsApp Web API doesn't support sending images directly
-                // So we'll just download and show a message
                 const link = document.createElement('a');
                 link.download = `kwitansi-${currentReceipt.transactionNumber}.png`;
                 link.href = imageData;
@@ -1353,9 +1380,29 @@
                 
                 showToast('Gambar kwitansi di-download! Silakan kirim manual ke pelanggan.', 'success');
                 
-                // Open WhatsApp for manual sending
-                const message = `Kwitansi ${currentReceipt.transactionNumber} dari Toko Mabel Mulyanto - Total: ${formatCurrency(currentReceipt.total)}`;
-                const encodedMessage = encodeURIComponent(message);
+                // Also open WhatsApp
+                const itemsText = currentReceipt.items.map(item => 
+                    `${item.name} x${item.quantity} = ${formatCurrency(item.price * item.quantity)}`
+                ).join('\n');
+
+                let msg = `*KWITANSI Toko Mabel Mulyanto*\n\n` +
+                    `No: ${currentReceipt.transactionNumber}\n` +
+                    `Tanggal: ${formatDate(currentReceipt.date)}\n` +
+                    `Pelanggan: ${currentReceipt.customerName || 'Umum'}\n\n` +
+                    `*Item:*\n${itemsText}\n\n` +
+                    `Subtotal: ${formatCurrency(currentReceipt.subtotal)}\n`;
+                
+                if (currentReceipt.discount > 0) {
+                    msg += `Diskon: -${formatCurrency(currentReceipt.discount)}\n`;
+                }
+                if (currentReceipt.shippingCost > 0) {
+                    msg += `Ongkir: ${formatCurrency(currentReceipt.shippingCost)}\n`;
+                }
+                
+                msg += `*TOTAL: ${formatCurrency(currentReceipt.total)}*\n\n` +
+                    `Terima kasih!`;
+
+                const encodedMessage = encodeURIComponent(msg);
                 window.open(`https://wa.me/${phoneNumber}?text=${encodedMessage}`, '_blank');
                 
             } catch (error) {
