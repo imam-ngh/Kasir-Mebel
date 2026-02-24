@@ -1,4 +1,4 @@
-import { sql } from '@vercel/postgres';
+import { db, sql } from '@vercel/postgres';
 
 export default async function handler(request, response) {
     // Izinkan CORS untuk pengembangan lokal
