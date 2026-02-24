@@ -1,4 +1,4 @@
-import { db, sql } from '@vercel/postgres';
+import { sql } from '@vercel/postgres';
 
 export default async function handler(request, response) {
     // Izinkan CORS untuk pengembangan lokal
@@ -9,8 +9,6 @@ export default async function handler(request, response) {
     if (request.method === 'OPTIONS') {
         return response.status(200).end();
     }
-
-    const client = await db.connect();
 
     try {
         switch (request.method) {
@@ -25,32 +23,25 @@ export default async function handler(request, response) {
                     return response.status(400).json({ error: 'Data transaksi tidak valid' });
                 }
 
-                await client.query('BEGIN'); // Mulai transaksi database
-
                 // 1. Simpan data transaksi utama
-                await client.query(
-                    `INSERT INTO transactions (transaction_number, customer_name, customer_phone, shipping_method, shipping_cost, shipping_address, shipping_notes, subtotal, discount, total, status, items)
-                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12);`,
-                    [
-                        transaction.transactionNumber, transaction.customerName, transaction.customerPhone,
-                        transaction.shippingMethod, transaction.shippingCost, transaction.shippingAddress,
-                        transaction.shippingNotes, transaction.subtotal, transaction.discount,
-                        transaction.total, transaction.status, JSON.stringify(transaction.items)
-                    ]
-                );
+                await sql`
+                    INSERT INTO transactions (transaction_number, customer_name, customer_phone, shipping_method, shipping_cost, shipping_address, shipping_notes, subtotal, discount, total, status, items)
+                    VALUES (${transaction.transactionNumber}, ${transaction.customerName}, ${transaction.customerPhone}, ${transaction.shippingMethod}, ${transaction.shippingCost}, ${transaction.shippingAddress}, ${transaction.shippingNotes}, ${transaction.subtotal}, ${transaction.discount}, ${transaction.total}, ${transaction.status}, ${JSON.stringify(transaction.items)})
+                `;
 
                 // 2. Kurangi stok untuk setiap item
                 for (const item of transaction.items) {
-                    const result = await client.query(
-                        'UPDATE products SET stock = stock - $1 WHERE id = $2 AND stock >= $1;',
-                        [item.quantity, item.productId]
-                    );
+                    if (!item.productId) continue;
+                    
+                    const result = await sql`
+                        UPDATE products SET stock = stock - ${item.quantity} WHERE id = ${item.productId} AND stock >= ${item.quantity}
+                    `;
+                    
                     if (result.rowCount === 0) {
                         throw new Error(`Stok untuk produk ${item.name} tidak mencukupi.`);
                     }
                 }
 
-                await client.query('COMMIT'); // Selesaikan transaksi jika semua berhasil
                 return response.status(201).json({ message: 'Transaksi berhasil disimpan' });
             }
             default:
@@ -58,10 +49,7 @@ export default async function handler(request, response) {
                 return response.status(405).end(`Method ${request.method} Not Allowed`);
         }
     } catch (error) {
-        await client.query('ROLLBACK'); // Batalkan semua perubahan jika ada error
         console.error('API Transaction Error:', error);
         return response.status(500).json({ error: 'Gagal memproses transaksi', details: error.message });
-    } finally {
-        client.release(); // Selalu lepaskan koneksi client
     }
 }
