@@ -28,10 +28,16 @@ export default async function handler(request, response) {
                 await client.query('BEGIN'); // Mulai transaksi database
 
                 // 1. Simpan data transaksi utama
-                await client.query(
-                    INSERT INTO transactions (transaction_number, customer_name, customer_phone, shipping_method, shipping_cost, shipping_address, shipping_notes, subtotal, discount, total, status, items)
-                    VALUES (${transaction.transactionNumber}, ${transaction.customerName}, ${transaction.customerPhone}, ${transaction.shippingMethod}, ${transaction.shippingCost}, ${transaction.shippingAddress}, ${transaction.shippingNotes}, ${transaction.subtotal}, ${transaction.discount}, ${transaction.total}, ${transaction.status}, ${JSON.stringify(transaction.items)})
-                `;
+                await client.query( // Menggunakan backticks untuk template literal dan $1, $2, ... untuk parameterized query
+                    `INSERT INTO transactions (transaction_number, customer_name, customer_phone, shipping_method, shipping_cost, shipping_address, shipping_notes, subtotal, discount, total, status, items)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12);`,
+                    [
+                        transaction.transactionNumber, transaction.customerName, transaction.customerPhone,
+                        transaction.shippingMethod, transaction.shippingCost, transaction.shippingAddress,
+                        transaction.shippingNotes, transaction.subtotal, transaction.discount,
+                        transaction.total, transaction.status, JSON.stringify(transaction.items)
+                    ]
+                );
 
                 // 2. Kurangi stok untuk setiap item
                 for (const item of transaction.items) {
