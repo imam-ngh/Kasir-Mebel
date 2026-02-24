@@ -1,7 +1,14 @@
 {
     "functions": {
-        "api/**/*.js": {
+        "products.js": {
+            "memory": 1024
+        },
+        "transactions.js": {
             "memory": 1024
         }
-    }
+    },
+    "rewrites": [
+        { "source": "/api/products", "destination": "/products.js" },
+        { "source": "/api/transactions", "destination": "/transactions.js" }
+    ]
 }
