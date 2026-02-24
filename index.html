@@ -1303,19 +1303,16 @@
         }
 
         // Share Functions
-        function shareWhatsApp() {
+        async function shareWhatsApp() {
             if (!currentReceipt) return;
 
-            // Get phone from the transaction
             let phoneNumber = currentReceipt.customerPhone ? currentReceipt.customerPhone.trim().replace(/[^0-9]/g, '') : '';
             
-            // If no phone number, show alert
             if (!phoneNumber) {
                 showToast('Nomor WhatsApp belum diisi saat checkout!', 'error');
                 return;
             }
 
-            // Add country code if not present
             if (!phoneNumber.startsWith('62')) {
                 phoneNumber = '62' + phoneNumber.replace(/^0/, '');
             }
@@ -1330,40 +1327,17 @@
                 `Pelanggan: ${currentReceipt.customerName || 'Umum'}\n\n` +
                 `*Item:*\n${itemsText}\n\n` +
                 `Subtotal: ${formatCurrency(currentReceipt.subtotal)}\n`;
-            
             if (currentReceipt.discount > 0) {
                 message += `Diskon: -${formatCurrency(currentReceipt.discount)}\n`;
             }
             if (currentReceipt.shippingCost > 0) {
                 message += `Ongkir: ${formatCurrency(currentReceipt.shippingCost)}\n`;
             }
-            
             message += `*TOTAL: ${formatCurrency(currentReceipt.total)}*\n\n` +
                 `Terima kasih!`;
 
-            const encodedMessage = encodeURIComponent(message);
-            window.open(`https://wa.me/${phoneNumber}?text=${encodedMessage}`, '_blank');
-        }
-
-        async function shareWhatsAppWithImage() {
-            if (!currentReceipt) return;
-
-            // Get phone from the transaction
-            let phoneNumber = currentReceipt.customerPhone ? currentReceipt.customerPhone.trim().replace(/[^0-9]/g, '') : '';
-            
-            if (!phoneNumber) {
-                showToast('Nomor WhatsApp belum diisi saat checkout!', 'error');
-                return;
-            }
-
-            if (!phoneNumber.startsWith('62')) {
-                phoneNumber = '62' + phoneNumber.replace(/^0/, '');
-            }
-
             try {
-                showToast('Membuat gambar kwitansi...', 'success');
-                
-                // Generate the image
+                showToast('Membuat gambar kwitansi...', 'info');
                 const receiptElement = document.getElementById('receiptContent');
                 const canvas = await html2canvas(receiptElement, {
                     scale: 2,
@@ -1371,44 +1345,63 @@
                     logging: false
                 });
 
-                // Download image
-                const imageData = canvas.toDataURL('image/png');
-                const link = document.createElement('a');
-                link.download = `kwitansi-${currentReceipt.transactionNumber}.png`;
-                link.href = imageData;
-                link.click();
-                
-                showToast('Gambar kwitansi di-download! Silakan kirim manual ke pelanggan.', 'success');
-                
-                // Also open WhatsApp
-                const itemsText = currentReceipt.items.map(item => 
-                    `${item.name} x${item.quantity} = ${formatCurrency(item.price * item.quantity)}`
-                ).join('\n');
+                canvas.toBlob(async (blob) => {
+                    if (!blob) {
+                        showToast('Gagal membuat gambar kwitansi.', 'error');
+                        fallbackShareTextOnly(message, phoneNumber);
+                        return;
+                    }
 
-                let msg = `*KWITANSI Toko Mabel Mulyanto*\n\n` +
-                    `No: ${currentReceipt.transactionNumber}\n` +
-                    `Tanggal: ${formatDate(currentReceipt.date)}\n` +
-                    `Pelanggan: ${currentReceipt.customerName || 'Umum'}\n\n` +
-                    `*Item:*\n${itemsText}\n\n` +
-                    `Subtotal: ${formatCurrency(currentReceipt.subtotal)}\n`;
-                
-                if (currentReceipt.discount > 0) {
-                    msg += `Diskon: -${formatCurrency(currentReceipt.discount)}\n`;
-                }
-                if (currentReceipt.shippingCost > 0) {
-                    msg += `Ongkir: ${formatCurrency(currentReceipt.shippingCost)}\n`;
-                }
-                
-                msg += `*TOTAL: ${formatCurrency(currentReceipt.total)}*\n\n` +
-                    `Terima kasih!`;
+                    const fileName = `kwitansi-${currentReceipt.transactionNumber}.png`;
+                    const file = new File([blob], fileName, { type: 'image/png' });
+                    const shareData = {
+                        files: [file],
+                        title: `Kwitansi ${currentReceipt.transactionNumber}`,
+                        text: message,
+                    };
 
-                const encodedMessage = encodeURIComponent(msg);
-                window.open(`https://wa.me/${phoneNumber}?text=${encodedMessage}`, '_blank');
-                
+                    if (navigator.share && navigator.canShare && navigator.canShare(shareData)) {
+                        try {
+                            await navigator.share(shareData);
+                            showToast('Kwitansi berhasil dibagikan!', 'success');
+                        } catch (err) {
+                            if (err.name !== 'AbortError') {
+                                console.error('Error sharing:', err);
+                                showToast('Gagal membagikan, gambar akan di-download.', 'warning');
+                                fallbackShareWithDownload(message, phoneNumber, canvas);
+                            }
+                        }
+                    } else {
+                        showToast('Fitur share tidak didukung. Gambar akan di-download.', 'warning');
+                        fallbackShareWithDownload(message, phoneNumber, canvas);
+                    }
+                }, 'image/png');
+
             } catch (error) {
-                console.error('Error generating image:', error);
-                showToast('Gagal membuat gambar. Silakan coba lagi.', 'error');
+                console.error('Error generating image for sharing:', error);
+                showToast('Gagal membuat gambar. Mengirim teks saja.', 'error');
+                fallbackShareTextOnly(message, phoneNumber);
             }
+        }
+
+        function fallbackShareWithDownload(message, phoneNumber, canvas) {
+            const imageData = canvas.toDataURL('image/png');
+            const link = document.createElement('a');
+            link.download = `kwitansi-${currentReceipt.transactionNumber}.png`;
+            link.href = imageData;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            showToast('Gambar kwitansi di-download! Silakan kirim manual.', 'success');
+            
+            const encodedMessage = encodeURIComponent(message);
+            window.open(`https://wa.me/${phoneNumber}?text=${encodedMessage}`, '_blank');
+        }
+
+        function fallbackShareTextOnly(message, phoneNumber) {
+            const encodedMessage = encodeURIComponent(message);
+            window.open(`https://wa.me/${phoneNumber}?text=${encodedMessage}`, '_blank');
         }
 
         function shareEmail() {
